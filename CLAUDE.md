@@ -89,6 +89,17 @@ Preia aspectul machetelor din `08-instalare-actualizare/ecrane/`: albastru `#2f6
 
 Entity Framework Core sau alt ORM · Duende · OpenIddict · `Microsoft.AspNetCore.Identity.EntityFrameworkCore` · `MapIdentityApi` · biblioteci de controale cu plată · MSI/WiX · PowerShell ca logică principală · parole SQL · `db_owner` pentru aplicație · `ALTER DATABASE … COLLATE` · ștergerea unei baze sau a backup-urilor · chei private în Git · secrete în jurnale · obiecte în `dbo` (excepții: `master.dbo.`, `msdb.dbo.`).
 
+## Înainte de livrare (T11, înaintea primului kit dat unui client)
+
+Lista de pași care transformă starea de dezvoltare în produs livrabil. Niciunul nu se face mai devreme, dar niciunul nu se uită:
+
+| # | Pas | Unde |
+| --- | --- | --- |
+| L1 | Generează cheile cu butonul „Chei” și lipește textul în `LicenseKeys.cs`; cheia privată rămâne doar pe calculatorul care emite licențe (3.5, R7) | `src/Shared/Erp.Licensing/LicenseKeys.cs` |
+| L2 | `LicensingPolicy.EnforceFiscalCodeCheckDigit` → `true`: un CUI cu cifră de control greșită blochează generarea (decizia D12, 3.2) | `src/Shared/Erp.Licensing/LicensingPolicy.cs` |
+| L3 | Regenerează licențele de test care conțineau CUI-uri inventate (exemplele din specificație nu trec cifra de control) | — |
+| L4 | Semnează `ErpSetup.exe` Authenticode și verifică manifestul kitului (C-05) | `build/package-kit.ps1` |
+
 ## Când modifici regulile
 
 `CLAUDE.md` și `.github/copilot-instructions.md` trebuie să rămână echivalente. Dacă o regulă se schimbă, schimbă-o în **specificație** (sursa de adevăr) și apoi în ambele fișiere de instrucțiuni, în același commit.

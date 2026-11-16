@@ -69,6 +69,12 @@ Culorile machetelor: albastru `#2f6fed` (hover `#2459c9`, fundal `#eef3fd`), ble
 
 EF Core sau alt ORM · Duende · OpenIddict · `Microsoft.AspNetCore.Identity.EntityFrameworkCore` · `MapIdentityApi` · biblioteci de controale cu plată (DevExpress, Telerik, Syncfusion) · MSI/WiX · PowerShell ca logică principală · parole SQL · `db_owner` pentru aplicație · `ALTER DATABASE … COLLATE` · ștergerea unei baze sau a backup-urilor · chei private în Git · secrete în jurnale · obiecte în `dbo` (excepții: `master.dbo.`, `msdb.dbo.`).
 
+## Înainte de livrare (T11)
+
+- Cheile se generează cu butonul „Chei” și se lipesc în `LicenseKeys.cs`; cheia privată nu intră în depozit.
+- `LicensingPolicy.EnforceFiscalCodeCheckDigit` trece pe `true`: în dezvoltare o cifră de control greșită e doar avertisment, în produsul finalizat blochează generarea (decizia D12). Nu propune trecerea pe `true` înainte de livrare și nu o scoate din cod.
+- Licențele de test cu CUI-uri inventate se regenerează; `ErpSetup.exe` se semnează Authenticode.
+
 ## Pull request-uri
 
 Implementare pe sarcinile T1–T11 din secțiunea 12, în ordine, **un pull request pe sarcină** (`GIT-01`–`GIT-04`). O sarcină e gata când trece criteriul IA-xx din secțiunea 11; testele poartă criteriul: `[Trait("Criteriu", "08-IA-07")]`.

@@ -16,6 +16,7 @@ Decizii ale lui Aurelian încorporate aici:
 | 14.11.2026 | Baza de date este **case sensitive**, collation `Latin1_General_100_CS_AS_SC_UTF8` (secțiunea 8, regulile `SQL-21`–`SQL-25`) |
 | 14.11.2026 | Instalarea creează un utilizator **Administrator**, cu parola afișată o singură dată, schimbare obligatorie și 2FA la prima autentificare (5.9) |
 | 14.11.2026 | Autentificarea: **ASP.NET Core Identity cu cookie**, în aceeași aplicație; fără Duende (costuri de licență) și fără OpenIddict (secțiunea 7) |
+| 16.11.2026 | Cifra de control a CUI-ului e blocantă în produsul finalizat; în dezvoltare e doar avertisment, ca testele să poată folosi CUI-uri inventate (decizia D12) |
 | 15.11.2026 | Instalarea în **pași simpli**, cu două aplicații mici; licența conține CUI-urile **doar cu partea numerică, separate prin „:”**, criptate puternic; conexiunea SQL cu **Windows authentication**; installer-ul rulează și pe **Windows 10/11**; CUI-ul firmei se verifică în licență la adăugarea firmei sau a grupului (secțiunile 3–5) |
 
 ---
@@ -105,7 +106,7 @@ O singură fereastră:
 | Câmp | Tip | Regulă |
 | --- | --- | --- |
 | Denumire client | text, obligatoriu | 2–200 caractere; de exemplu „Grupul Exemplu” |
-| CUI-uri | text pe mai multe rânduri, obligatoriu | Se acceptă CUI-uri separate prin rând nou, virgulă, spațiu sau `:`, cu sau fără prefixul `RO`. La „Validează” fiecare CUI se **normalizează la partea numerică** (se elimină `RO`, spațiile și orice altceva decât cifre), se verifică cifra de control CUI și dublurile. Lista normalizată se afișează sub câmp, de exemplu `10000001:12345678:23456789:34567890`. Un CUI invalid se marchează cu roșu și blochează generarea |
+| CUI-uri | text pe mai multe rânduri, obligatoriu | Se acceptă CUI-uri separate prin rând nou, virgulă, spațiu sau `:`, cu sau fără prefixul `RO`. La „Validează” fiecare CUI se **normalizează la partea numerică** (se elimină `RO`, spațiile și orice altceva decât cifre), se verifică cifra de control CUI și dublurile. Lista normalizată se afișează sub câmp, de exemplu `10000001:12345678:23456789:34567890`. Un CUI invalid se marchează cu roșu și blochează generarea. Până la finalizarea proiectului (decizia D12) cifra de control e doar un avertisment, ca să se poată genera licențe de test cu CUI-uri inventate — exemplele de mai sus sunt de acest fel; comutatorul este `LicensingPolicy.EnforceFiscalCodeCheckDigit` |
 | Tip | afișat automat | „Firmă” dacă e un singur CUI, „Grup de N firme” dacă sunt mai multe |
 | Module | casete de bifat | Lista modulelor (Nucleu bifat și blocat; Finanțe, Vânzări, Achiziții, Stocuri, WMS, Transport, Producție, HR, POS, Construcții, CRM, Raportare, Integrări) |
 | Limite | numere | Utilizatori, angajați salarizare, case POS. Numărul de firme = numărul de CUI-uri |
@@ -1165,6 +1166,7 @@ Testele unitare și de integrare SQL rulează în CI la fiecare pull request (Te
 | D9 | Certificatul intern generat de installer e **opțiunea implicită** pe ecranul 2; operatorul poate alege în schimb un certificat existent din `LocalMachine\My` (de exemplu emis de AD CS-ul clientului sau pentru o adresă publică) | Decis de Aurelian, 15.11.2026 |
 | D10 | Toate schemele modulelor se instalează indiferent de licență; licența decide doar ce module pornesc | Validat 14.11.2026 |
 | D11 | Backup complet zilnic, log la 15 minute, păstrare 14 zile, CHECKDB săptămânal | Validat 14.11.2026 |
+| D12 | Cifra de control a CUI-ului: avertisment în timpul dezvoltării (ca testele să poată folosi CUI-uri inventate), blocantă în produsul finalizat. Se trece pe blocantă înainte de livrare, din `LicensingPolicy.EnforceFiscalCodeCheckDigit` | Decis de Aurelian, 16.11.2026 |
 
 ---
 

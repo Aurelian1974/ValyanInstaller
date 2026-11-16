@@ -113,15 +113,24 @@ public static partial class FiscalCode
     /// Împarte textul introdus de operator (rânduri noi, virgule, spații, „;” sau „:”)
     /// în CUI-uri normalizate, în ordinea introducerii, fără duplicate (3.2).
     /// </summary>
-    public static FiscalCodeParseResult ParseList(string? input)
+    /// <param name="input">Textul din câmpul „CUI-uri”.</param>
+    /// <param name="enforceCheckDigit">
+    /// Dacă o cifră de control greșită respinge CUI-ul. Implicit urmează
+    /// <see cref="LicensingPolicy.EnforceFiscalCodeCheckDigit"/>: în dezvoltare CUI-ul
+    /// e doar semnalat în <see cref="FiscalCodeParseResult.WeakCheckDigit"/>, în produsul
+    /// livrat e refuzat (3.2).
+    /// </param>
+    public static FiscalCodeParseResult ParseList(string? input, bool? enforceCheckDigit = null)
     {
+        var enforce = enforceCheckDigit ?? LicensingPolicy.EnforceFiscalCodeCheckDigit;
         var accepted = new List<string>();
         var invalid = new List<string>();
         var duplicates = new List<string>();
+        var weakCheckDigit = new List<string>();
 
         if (string.IsNullOrWhiteSpace(input))
         {
-            return new FiscalCodeParseResult([], [], []);
+            return new FiscalCodeParseResult([], [], [], []);
         }
 
         var tokens = RoPrefixPattern().Replace(input, string.Empty).Split(
@@ -130,7 +139,14 @@ public static partial class FiscalCode
 
         foreach (var token in tokens)
         {
-            if (!TryParse(token, out var code))
+            if (!TryNormalize(token, out var code))
+            {
+                invalid.Add(token);
+                continue;
+            }
+
+            var checkDigitOk = HasValidCheckDigit(code);
+            if (!checkDigitOk && enforce)
             {
                 invalid.Add(token);
                 continue;
@@ -143,9 +159,13 @@ public static partial class FiscalCode
             }
 
             accepted.Add(code);
+            if (!checkDigitOk)
+            {
+                weakCheckDigit.Add(code);
+            }
         }
 
-        return new FiscalCodeParseResult(accepted, invalid, duplicates);
+        return new FiscalCodeParseResult(accepted, invalid, duplicates, weakCheckDigit);
     }
 
     /// <summary>Scrie lista în forma din licență: <c>10000001:12345678</c> (3.3).</summary>
@@ -212,10 +232,19 @@ public static partial class FiscalCode
 public sealed record FiscalCodeParseResult(
     IReadOnlyList<string> Accepted,
     IReadOnlyList<string> Invalid,
-    IReadOnlyList<string> Duplicates)
+    IReadOnlyList<string> Duplicates,
+    IReadOnlyList<string> WeakCheckDigit)
 {
     /// <summary>Generarea licenței e permisă numai dacă nu există CUI greșit sau dublat.</summary>
     public bool IsUsable => Accepted.Count > 0 && Invalid.Count == 0 && Duplicates.Count == 0;
+
+    /// <summary>
+    /// CUI-uri acceptate a căror cifră de control nu e corectă. Lista e goală în produsul
+    /// livrat, unde astfel de CUI-uri ajung în <see cref="Invalid"/>
+    /// (<see cref="LicensingPolicy.EnforceFiscalCodeCheckDigit"/>). Cât timp nu e goală,
+    /// ecranul le arată cu un avertisment, nu cu roșu.
+    /// </summary>
+    public bool HasWeakCheckDigits => WeakCheckDigit.Count > 0;
 
     /// <summary>Lista normalizată, afișată sub câmp și scrisă în licență (3.2, 3.3).</summary>
     public string NormalizedList => FiscalCode.FormatList(Accepted);

@@ -50,7 +50,7 @@ public sealed class FiscalCodeTests
         var a = FiscalCode.WithCheckDigit("1000000");
         var b = FiscalCode.WithCheckDigit("2345678");
 
-        var result = FiscalCode.ParseList($"RO{a}\r\n ro {b}");
+        var result = FiscalCode.ParseList($"RO{a}\r\n ro {b}", enforceCheckDigit: true);
 
         Assert.True(result.IsUsable);
         Assert.Equal([a, b], result.Accepted);
@@ -59,17 +59,68 @@ public sealed class FiscalCodeTests
 
     [Fact]
     [Trait("Criteriu", "08-IA-01")]
-    public void Lista_semnaleaza_cui_invalid_si_blocheaza_generarea()
+    public void In_produsul_livrat_un_cui_invalid_blocheaza_generarea()
     {
         var valid = FiscalCode.WithCheckDigit("1234567");
-        var invalid = string.Concat(valid[..^1], ((valid[^1] - '0' + 1) % 10).ToString(CultureInfo.InvariantCulture));
+        var invalid = WithWrongCheckDigit(valid);
 
-        var result = FiscalCode.ParseList($"{valid}, {invalid}");
+        var result = FiscalCode.ParseList($"{valid}, {invalid}", enforceCheckDigit: true);
 
         Assert.False(result.IsUsable);
         Assert.Equal([valid], result.Accepted);
         Assert.Equal([invalid], result.Invalid);
+        Assert.Empty(result.WeakCheckDigit);
     }
+
+    [Fact]
+    [Trait("Criteriu", "08-IA-01")]
+    public void In_dezvoltare_un_cui_invalid_e_acceptat_dar_semnalat()
+    {
+        // Decizia D12: în timpul dezvoltării se pot genera licențe de test cu CUI-uri
+        // inventate (exemplele din specificație sunt de acest fel), dar ele rămân marcate.
+        var valid = FiscalCode.WithCheckDigit("1234567");
+        var invalid = WithWrongCheckDigit(valid);
+
+        var result = FiscalCode.ParseList($"{valid}, {invalid}", enforceCheckDigit: false);
+
+        Assert.True(result.IsUsable);
+        Assert.Equal([valid, invalid], result.Accepted);
+        Assert.Empty(result.Invalid);
+        Assert.Equal([invalid], result.WeakCheckDigit);
+        Assert.True(result.HasWeakCheckDigits);
+    }
+
+    [Fact]
+    [Trait("Criteriu", "08-IA-01")]
+    public void Exemplele_din_specificatie_nu_trec_cifra_de_control()
+    {
+        // 3.2 și 3.3 folosesc CUI-uri ilustrative; la livrare generatorul le va refuza.
+        foreach (var code in new[] { "10000001", "12345678", "23456789", "34567890" })
+        {
+            Assert.False(FiscalCode.HasValidCheckDigit(code), code);
+        }
+    }
+
+    [Fact]
+    [Trait("Criteriu", "08-IA-01")]
+    public void Forma_gresita_e_refuzata_in_ambele_regimuri()
+    {
+        // Cifra de control e singura verificare care se relaxează în dezvoltare;
+        // forma (numai cifre, 2–10, fără zero la început) se cere oricum.
+        foreach (var enforce in new[] { true, false })
+        {
+            var result = FiscalCode.ParseList("abc, 01234567, 123456789012", enforceCheckDigit: enforce);
+
+            Assert.False(result.IsUsable);
+            Assert.Empty(result.Accepted);
+            Assert.Equal(3, result.Invalid.Count);
+        }
+    }
+
+    private static string WithWrongCheckDigit(string validCode)
+        => string.Concat(
+            validCode[..^1],
+            ((validCode[^1] - '0' + 1) % 10).ToString(CultureInfo.InvariantCulture));
 
     [Fact]
     [Trait("Criteriu", "08-IA-01")]
@@ -77,7 +128,7 @@ public sealed class FiscalCodeTests
     {
         var code = FiscalCode.WithCheckDigit("1234567");
 
-        var result = FiscalCode.ParseList($"{code}\n RO{code}");
+        var result = FiscalCode.ParseList($"{code}\n RO{code}", enforceCheckDigit: true);
 
         Assert.False(result.IsUsable);
         Assert.Equal([code], result.Accepted);
