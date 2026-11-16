@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Setup/">
+    <Project Path="src/Setup/Erp.Setup.Tests/Erp.Setup.Tests.csproj" />
+  </Folder>
+  <Folder Name="/src/Shared/">
+    <Project Path="src/Shared/Erp.Licensing/Erp.Licensing.csproj" />
+  </Folder>
+</Solution>

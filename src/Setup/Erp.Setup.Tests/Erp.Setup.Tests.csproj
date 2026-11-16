@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Erp.Setup.Tests</RootNamespace>
+    <!-- Numele testelor sunt propoziții cu underscore (TST-01), deci CA1707 nu se aplică aici. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../Shared/Erp.Licensing/Erp.Licensing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      3.4: LicenseWriter și fabrica de chei nu se compilează în Erp.Licensing. Testele le
+      includ ca fișiere legate, exact cum o face ErpLicenseGen (T2), ca să poată verifica
+      ciclul complet generare → citire (IA-02).
+    -->
+    <Compile Include="../../Shared/Erp.Licensing/Generator/*.cs" LinkBase="Licensing/Generator" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Erp.Licensing</RootNamespace>
+    <!--
+      Bibliotecă partajată de ErpLicenseGen, ErpSetup și Erp.Host (3.4).
+      Nu are referințe de platformă: se compilează și pe Linux, în CI.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      3.4: clasa LicenseWriter și fabrica de chei NU se compilează în această bibliotecă,
+      deci nu ajung în ERP sau în installer. Sunt incluse ca fișiere legate numai de
+      ErpLicenseGen (T2) și de proiectul de teste.
+    -->
+    <Compile Remove="Generator/**/*.cs" />
+    <None Include="Generator/**/*.cs" />
+  </ItemGroup>
+
+</Project>

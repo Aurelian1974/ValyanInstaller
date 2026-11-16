@@ -1,0 +1,25 @@
+# .NET
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+TestResults/
+*.trx
+*.coverage
+*.nupkg
+
+# Secrete și chei – R7, SEC-02: nu intră NICIODATĂ în depozit
+*.bin
+*.pfx
+*.pvk
+*.snk
+sign-*.key
+keys/
+licente-emise.csv
+*.lic

@@ -1,0 +1,21 @@
+<Project>
+
+  <!-- Proprietăți comune tuturor proiectelor (R1, R11). -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <Deterministic>true</Deterministic>
+    <NeutralLanguage>ro-RO</NeutralLanguage>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <Company>Valyan</Company>
+    <Product>ERP</Product>
+    <!-- Versiunea kitului; o suprascrie build/package-kit.ps1 (T11). -->
+    <VersionPrefix>2027.1.0</VersionPrefix>
+  </PropertyGroup>
+
+</Project>
