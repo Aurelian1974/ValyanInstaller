@@ -13,10 +13,13 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <!-- Testele de integrare se sar curat când nu există SQL Server (TST-09). -->
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.85" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../../Shared/Erp.Licensing/Erp.Licensing.csproj" />
+    <ProjectReference Include="../Erp.Setup.Sql/Erp.Setup.Sql.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +29,12 @@
       ciclul complet generare → citire (IA-02).
     -->
     <Compile Include="../../Shared/Erp.Licensing/Generator/*.cs" LinkBase="Licensing/Generator" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Scripturile de bootstrap, lângă binarul testelor (5.5). -->
+    <None Include="../../../database/bootstrap/*.sql" Link="database/bootstrap/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

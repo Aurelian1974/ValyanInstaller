@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Erp.Setup.Sql</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- R2: Dapper + SQL parametrizat sau proceduri stocate. Fără EF Core sau alt ORM. -->
+    <PackageReference Include="Dapper" Version="2.1.89" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../Shared/Erp.Licensing/Erp.Licensing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Scripturile din kit se copiază lângă binar; în kit stau în database\ (secțiunea 6). -->
+    <None Include="../../../database/bootstrap/*.sql" Link="database/bootstrap/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

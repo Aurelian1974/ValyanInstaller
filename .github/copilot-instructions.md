@@ -59,6 +59,7 @@ Logica stă în `Erp.Setup.Core`, testabilă fără interfață. Ecranele WPF do
 - **Administrator:** `administrator` (litere mici), `IsSystem=1`, rol `ADMIN` cu `CompanyId = NULL`, `MustChangePassword=1`, `TwoFactorRequired=1`; parolă de 20 de caractere din `RandomNumberGenerator`, hash `PasswordHasher<TUser>` (V3), în clar doar în memorie.
 - **Loginuri:** SQL local → `[IIS APPPOOL\ERP-<Instanță>]` + `[NT SERVICE\ErpWorker-<Instanță>]`; SQL la distanță → `[DOMENIU\CALCULATOR$]`. Membri în rolurile `role_*`, **niciodată `db_owner`** (`SP-19`).
 - **Pași:** instalare I-01…I-18 (5.4), actualizare U-01…U-10 cu revenire automată (9.2), reluare din `instance.json`.
+- **Licența în bază (D13, D14):** installer-ul scrie CUI-urile licențiate în `core.InstallationLicense` și `core.InstallationLicenseFiscalCode`; ERP-ul le citește din `core.v_LicensedFiscalCode`, fără să decripteze. Tabelele sunt doar-citire pentru aplicație (`DENY` pe scriere pentru rolurile de modul). O licență nouă intră numai prin butonul „Actualizează licența” din installer (10.5).
 - **Procese externe:** `Process.Start` cu `ArgumentList`, fără shell. Cod de ieșire ≠ 0 → pasul eșuează; DISM 3010 = repornire necesară.
 
 ## Interfața WPF

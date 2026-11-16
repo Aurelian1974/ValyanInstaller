@@ -16,6 +16,7 @@ Decizii ale lui Aurelian încorporate aici:
 | 14.11.2026 | Baza de date este **case sensitive**, collation `Latin1_General_100_CS_AS_SC_UTF8` (secțiunea 8, regulile `SQL-21`–`SQL-25`) |
 | 14.11.2026 | Instalarea creează un utilizator **Administrator**, cu parola afișată o singură dată, schimbare obligatorie și 2FA la prima autentificare (5.9) |
 | 14.11.2026 | Autentificarea: **ASP.NET Core Identity cu cookie**, în aceeași aplicație; fără Duende (costuri de licență) și fără OpenIddict (secțiunea 7) |
+| 16.11.2026 | Installer-ul scrie CUI-urile licențiate în baza de date, ERP-ul le citește fără să decripteze, iar licențele noi intră prin butonul „Actualizează licența” (deciziile D13, D14) |
 | 16.11.2026 | Cifra de control a CUI-ului e blocantă în produsul finalizat; în dezvoltare e doar avertisment, ca testele să poată folosi CUI-uri inventate (decizia D12) |
 | 15.11.2026 | Instalarea în **pași simpli**, cu două aplicații mici; licența conține CUI-urile **doar cu partea numerică, separate prin „:”**, criptate puternic; conexiunea SQL cu **Windows authentication**; installer-ul rulează și pe **Windows 10/11**; CUI-ul firmei se verifică în licență la adăugarea firmei sau a grupului (secțiunile 3–5) |
 
@@ -185,8 +186,8 @@ Generatorul păstrează local `%APPDATA%\ErpLicenseGen\licente-emise.csv`: numă
 | Moment | Ce se întâmplă |
 | --- | --- |
 | Installer, ecranul 3 | Operatorul alege fișierul `.lic`. Installer-ul îl verifică (4.2) și afișează: clientul, lista CUI-urilor (cu prefixul `RO` doar la afișare), modulele, data de expirare. O licență invalidă sau expirată nu permite continuarea |
-| Installer, pasul de instalare | Copiază fișierul **criptat** în `C:\ProgramData\Erp\<Instanță>\license\erp.lic` și salvează aceiași octeți în `core.InstallationLicense.LicenseFile` (`varbinary(max)`), ca licența să fie inclusă în backup-ul bazei |
-| Aplicația, Administrare › Configurare › Licență | Încărcarea unei licențe noi (de exemplu pentru o firmă adăugată în grup), cu permisiunea `Core.License.Manage`; aceleași verificări; licența veche rămâne în istoric |
+| Installer, pasul de instalare | Copiază fișierul **criptat** în `C:\ProgramData\Erp\<Instanță>\license\erp.lic` și scrie în `core.InstallationLicense` atât octeții criptați (`LicenseFile`, `varbinary(max)`, ca licența să fie inclusă în backup-ul bazei), cât și **conținutul lizibil**: numărul licenței, clientul, lista de CUI-uri, modulele, limitele și valabilitatea. Fiecare CUI primește un rând în `core.InstallationLicenseFiscalCode` (decizia D13) |
+| Installer, butonul „Actualizează licența” | Singura cale prin care o licență nouă ajunge în instalare (de exemplu pentru o firmă adăugată în grup): se verifică (4.2) și se rescriu fișierul și tabelele (10.5, decizia D14) |
 
 În clar, conținutul licenței există doar în memorie, niciodată pe disc sau în jurnale.
 
@@ -206,14 +207,17 @@ Generatorul păstrează local `%APPDATA%\ErpLicenseGen\licente-emise.csv`: numă
 
 Cerința lui Aurelian: la adăugarea unei firme sau a unui grup, licența se decriptează și CUI-ul se verifică; dacă nu e în licență, se afișează un mesaj de eroare.
 
+Decizia D13 (16.11.2026): **ERP-ul nu decriptează licența**. Installer-ul scrie CUI-urile licențiate în baza de date, iar aplicația le citește de acolo. Așa, cele două aplicații de instalare rămân independente de ERP: contractul dintre ele este tabela, nu o bibliotecă.
+
 1. Comenzile `CreateCompany`, `UpdateCompany` (dacă se schimbă CUI-ul) și crearea unui grup cu firmele lui (asistentul de configurare, pasul „Firme”, și ecranul Firme și structură) apelează în handler `ILicenseService.EnsureFiscalCodeLicensed(fiscalCode)`, **înainte** de orice scriere.
-2. `ILicenseService` citește `erp.lic`, îl verifică (4.2) și păstrează lista de CUI-uri în memorie; reîncarcă fișierul când se schimbă (`FileSystemWatcher`) sau când se încarcă o licență nouă.
-3. CUI-ul introdus se **normalizează la partea numerică** (se elimină `RO`, spațiile; de exemplu `RO 12345678` → `12345678`) și se compară exact cu fiecare element din `fiscalCodes.Split(':')`.
+2. `ILicenseService` citește `core.InstallationLicenseFiscalCode` (un `SELECT`, fără criptografie) și păstrează lista în memorie; o reîncarcă la pornire și zilnic.
+3. CUI-ul introdus se **normalizează la partea numerică** (se elimină `RO`, spațiile; de exemplu `RO 12345678` → `12345678`) și se compară exact cu rândurile din tabelă, care conțin tot numai cifre.
 4. Dacă nu se găsește, comanda se refuză cu `403` și codul `CORE_FISCAL_CODE_NOT_LICENSED`, cu mesajul afișat pe câmpul CUI:
    > „CUI-ul 12345678 nu figurează în licența acestei instalări. Pentru a adăuga firma, cereți furnizorului o licență care o include și încărcați-o din Administrare › Configurare › Licență.”
 5. Pentru un grup, fiecare firmă se verifică separat; mesajul listează toate CUI-urile care lipsesc, iar grupul nu se salvează parțial.
 6. Numărul de firme active nu poate depăși numărul de CUI-uri din licență (consecință directă a regulii de mai sus).
 7. La pornire și zilnic, aplicația verifică și că toate firmele active au CUI-ul în licență (02.01, fluxul 4.4); o firmă al cărei CUI a dispărut dintr-o licență nouă intră în modul doar-citire, cu avertisment pentru administratori.
+8. Tabelele sunt **doar-citire pentru aplicație**: rolurile de modul au `SELECT`, iar `INSERT`, `UPDATE` și `DELETE` sunt refuzate explicit cu `DENY` (5.5). Le scrie numai installer-ul, cu contul Windows al operatorului. Un cont `sysadmin` pe SQL Server poate totuși modifica rândurile: limita de firme nu mai e păzită criptografic, ci de drepturile din bază (consecința asumată a deciziei D13).
 
 Testul de acceptare corespunzător este IA-07 (secțiunea 11).
 
@@ -1110,6 +1114,12 @@ Confirmare prin tastarea numelui instalării. Oprește și șterge serviciul, si
 
 Creează `erp-diagnostic-<Instanță>-<dată>.zip` pe Desktop: rezultatul verificărilor, `instance.json`, `appsettings.Installation.json`, jurnalele ultimelor 7 zile, configurarea IIS a site-ului, starea serviciului, rezumatul licenței (client, număr de CUI-uri, module, expirare; **fără** fișierul de licență), din SQL: versiune, ediție, collation, ultimele 20 de migrații, ultimele 50 de rulări ale joburilor ERP, ultimele 20 de backup-uri, răspunsul `/health/ready`. Exclus: cheile Data Protection, fișierul de licență, orice date de business.
 
+### 10.5 „Actualizează licența”
+
+Pentru o licență nouă după instalare: o firmă adăugată în grup, module cumpărate ulterior, prelungirea valabilității (decizia D14). Operatorul pornește `ErpSetup.exe`, alege „Actualizează licența”, apoi fișierul `.lic`. Installer-ul îl verifică (4.2), afișează clientul, CUI-urile, modulele și valabilitatea, compară lista de CUI-uri cu firmele active din bază și avertizează dacă o firmă activă nu mai e licențiată (ar trece în doar-citire, 4.3, regula 7). La confirmare: rescrie `C:\ProgramData\Erp\<Instanță>\license\erp.lic` și rândurile din `core.InstallationLicense` și `core.InstallationLicenseFiscalCode`, într-o singură tranzacție, și reciclează pool-ul IIS, ca aplicația să recitească lista. Nu atinge baza în alt fel, nu modifică utilizatori și nu cere mentenanță.
+
+Această cale înlocuiește ecranul „Administrare › Configurare › Licență” din 4.1: aplicația nu poate scrie tabelele licenței (4.3, regula 8).
+
 ---
 
 ## 11. Teste și criterii de acceptare
@@ -1139,7 +1149,7 @@ Testele unitare și de integrare SQL rulează în CI la fiecare pull request (Te
 | --- | --- | --- |
 | T1 | `Erp.Licensing`: formatul din 3.4, `ILicenseReader` cu verificările din 4.2, normalizarea CUI, `LicenseKeys.cs` | IA-02 |
 | T2 | `ErpLicenseGen` (WPF, MVVM): ecranul din 3.2, cheile (3.5), registrul (3.6), „Deschide o licență” | IA-01; o licență generată se deschide corect |
-| T3 | `ILicenseService.EnsureFiscalCodeLicensed` în Nucleu, folosit de comenzile de firmă și grup; încărcarea licenței din Configurare | IA-07 |
+| T3 | Licența în baza de date: tabelele `core.InstallationLicense` și `core.InstallationLicenseFiscalCode`, scrise la I-09 și doar-citire pentru aplicație (D13), plus butonul „Actualizează licența” (10.5, D14). `ILicenseService.EnsureFiscalCodeLicensed` din Nucleu citește tabela și se implementează în depozitul ERP, pe baza acestui contract | IA-07 |
 | T4 | `Erp.Setup.Sql`: baza, scheme, roluri, loginuri Windows (5.5, 5.7), runner-ul DbUp (5.8) | IA-04, IA-11 |
 | T5 | Administratorul inițial (5.9), procedurile lui | IA-06, IA-09 |
 | T6 | `Erp.Setup.Windows`: DISM, Hosting Bundle, certificat intern, IIS, serviciu, firewall, ACL (5.10) | Instalare pe VM până la I-15 |
@@ -1166,6 +1176,8 @@ Testele unitare și de integrare SQL rulează în CI la fiecare pull request (Te
 | D9 | Certificatul intern generat de installer e **opțiunea implicită** pe ecranul 2; operatorul poate alege în schimb un certificat existent din `LocalMachine\My` (de exemplu emis de AD CS-ul clientului sau pentru o adresă publică) | Decis de Aurelian, 15.11.2026 |
 | D10 | Toate schemele modulelor se instalează indiferent de licență; licența decide doar ce module pornesc | Validat 14.11.2026 |
 | D11 | Backup complet zilnic, log la 15 minute, păstrare 14 zile, CHECKDB săptămânal | Validat 14.11.2026 |
+| D13 | CUI-urile licențiate se scriu de installer în `core.InstallationLicense` și `core.InstallationLicenseFiscalCode`; ERP-ul le citește de acolo și **nu decriptează licența**. Tabelele sunt doar-citire pentru aplicație (`DENY` pe scriere). Consecința asumată: limita de firme e păzită de drepturile din bază, nu criptografic | Decis de Aurelian, 16.11.2026 |
+| D14 | O licență nouă intră în instalare numai prin butonul „Actualizează licența” din `ErpSetup.exe` (10.5); ecranul de încărcare din aplicație dispare | Decis de Aurelian, 16.11.2026 |
 | D12 | Cifra de control a CUI-ului: avertisment în timpul dezvoltării (ca testele să poată folosi CUI-uri inventate), blocantă în produsul finalizat. Se trece pe blocantă înainte de livrare, din `LicensingPolicy.EnforceFiscalCodeCheckDigit` | Decis de Aurelian, 16.11.2026 |
 
 ---

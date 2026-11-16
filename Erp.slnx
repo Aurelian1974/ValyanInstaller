@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/" />
   <Folder Name="/src/Setup/">
+    <Project Path="src/Setup/Erp.Setup.Sql/Erp.Setup.Sql.csproj" />
     <Project Path="src/Setup/Erp.Setup.Tests/Erp.Setup.Tests.csproj" />
   </Folder>
   <Folder Name="/src/Shared/">

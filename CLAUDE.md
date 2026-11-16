@@ -71,7 +71,8 @@ Branch de dezvoltare: `claude/dazzling-pasteur-i7niyd`. Nu creezi pull request d
 ## Repere pe care le greșesc modelele
 
 - **Licența (3.3, 3.4):** JSON UTF-8 cu `fiscalCodes` ca **un singur șir** `"10000001:12345678"`, regula `^[1-9][0-9]{1,9}(:[1-9][0-9]{1,9})*$`, fără duplicate. Fișierul `.lic`: marcaj `ERPLIC01` (8) · versiune `1` (1) · `KeyId` (1) · nonce (12) · lungime uint32 LE (4) · text criptat (n) · tag GCM (16) · semnătură ECDSA IEEE P1363 (64). AAD = octeții 0…25. Se **criptează, apoi se semnează**. Verificarea respectă ordinea din 4.2 și mesajele exacte de acolo.
-- **CUI:** normalizare la partea numerică (se elimină `RO`, spațiile, orice non-cifră), validare cifră de control, comparație exactă cu elementele din `fiscalCodes.Split(':')`. La firmă/grup nelicențiat: `403` + `CORE_FISCAL_CODE_NOT_LICENSED` + mesajul din 4.3; grupul nu se salvează parțial (IA-07).
+- **CUI:** normalizare la partea numerică (se elimină `RO`, spațiile, orice non-cifră), validare cifră de control, comparație exactă. La firmă/grup nelicențiat, ERP-ul refuză cu `403` + `CORE_FISCAL_CODE_NOT_LICENSED` + mesajul din 4.3; grupul nu se salvează parțial (IA-07).
+- **Licența în bază (D13, D14):** installer-ul scrie CUI-urile licențiate în `core.InstallationLicense` și `core.InstallationLicenseFiscalCode`; ERP-ul le citește din `core.v_LicensedFiscalCode` și **nu decriptează licența**. Tabelele sunt doar-citire pentru aplicație (`DENY` pe `INSERT`/`UPDATE`/`DELETE` pentru rolurile de modul). O licență nouă intră numai prin butonul „Actualizează licența” din `ErpSetup.exe` (10.5); ecranul de încărcare din aplicație nu mai există.
 - **DDL:** nu acceptă parametri — text construit în C# cu `QuoteName()` pentru nume, `SqlLiteral()` pentru căi validate, `CultureInfo.InvariantCulture` pentru numere. Aceasta e abaterea scrisă de la `SP-06` și e permisă **numai** în `Erp.Setup.Sql` (secțiunea 14).
 - **Case sensitive:** `core.[User]` (cuvânt rezervat, mereu în paranteze), vederi de sistem cu litere mici (`sys.databases`), `JournalToSqlTable("core", "SchemaVersion")` exact așa. În `#t`, coloanele text cu `COLLATE DATABASE_DEFAULT` (`SQL-23`).
 - **Administrator (5.9):** `administrator` (litere mici), `IsSystem=1`, rol `ADMIN` cu `CompanyId = NULL`, `MustChangePassword=1`, `TwoFactorRequired=1`. Parolă de 20 de caractere din `RandomNumberGenerator`, alfabet fără caractere confundabile, minimum 2 din fiecare categorie; hash `PasswordHasher<TUser>` (V3). Parola în clar: doar în memorie, până la închiderea ecranului 6. Dacă există deja un administrator activ → pasul I-10 e „sărit”, fără parolă pe ecran.
@@ -80,6 +81,14 @@ Branch de dezvoltare: `claude/dazzling-pasteur-i7niyd`. Nu creezi pull request d
 - **Actualizarea:** U-01 … U-10 din 9.2, cu **revenire automată** la orice eșec din U-03…U-09 și restaurarea bazei dacă U-06 a început. Migrațiile merg doar înainte (`MIG-03`). Protecția versiune program ↔ versiune bază: `AssemblyMetadata("ErpLastMigration", …)` vs. `core.SchemaVersion` (9.4).
 - **Procese externe:** `Process.Start` cu `ArgumentList`, fără shell, fără concatenare de text (DISM, `sc.exe`, Hosting Bundle). Cod de ieșire ≠ 0 → pasul eșuează; 3010 la DISM = repornire necesară.
 - **Health-check (5.12):** `GET /health/ready` la 5 s, maximum 180 s, conectare la `127.0.0.1` dar cu SNI și antet `Host` egale cu `hostName` (`SocketsHttpHandler.ConnectCallback`). Contractul JSON de răspuns e fix.
+
+## Baza de date de test
+
+Testele de integrare (`TST-09`, IA-04, IA-07, IA-11) rulează pe un SQL Server real, pe o bază creată cu `Latin1_General_100_CS_AS_SC_UTF8` pe un server case **in**sensitive, ca greșelile de majuscule să apară în CI. Serverul se ia din `ERP_TEST_SQL`, altfel din `127.0.0.1,11433`; fără server, testele acelea se sar (`Skip.IfNot`), nu trec tăcut. Autentificarea SQL se folosește **numai** în teste, pentru că pe Linux nu există Windows authentication; produsul respectă R5.
+
+```bash
+docker run -d --name erp-sql -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='Erp-Test-2026!parola' -e MSSQL_COLLATION=SQL_Latin1_General_CP1_CI_AS -p 11433:1433 mcr.microsoft.com/mssql/server:2022-latest
+```
 
 ## Interfața WPF
 
