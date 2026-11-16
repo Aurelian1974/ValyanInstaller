@@ -74,8 +74,14 @@ public sealed class LicenseReader : ILicenseReader
                 return LicenseReadResult.Failed(LicenseFailureCode.Corrupted, LicenseMessages.Corrupted);
             }
 
-            // Verificarea 4: JSON valid, product = „ERP”, fiscalCodes conform 3.3.
+            // Verificarea 4: JSON valid, product = „ERP”, fiscalCodes conform 3.3 și, dacă
+            // licența o poartă, semnătura detașată a conținutului (3.3, decizia D15).
             if (!TryDeserialize(plaintext, out var content))
+            {
+                return LicenseReadResult.Failed(LicenseFailureCode.Corrupted, LicenseMessages.Corrupted);
+            }
+
+            if (content.ContentSignature is not null && !LicensePayload.Verify(content, material))
             {
                 return LicenseReadResult.Failed(LicenseFailureCode.Corrupted, LicenseMessages.Corrupted);
             }

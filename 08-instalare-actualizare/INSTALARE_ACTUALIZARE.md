@@ -17,6 +17,7 @@ Decizii ale lui Aurelian încorporate aici:
 | 14.11.2026 | Instalarea creează un utilizator **Administrator**, cu parola afișată o singură dată, schimbare obligatorie și 2FA la prima autentificare (5.9) |
 | 14.11.2026 | Autentificarea: **ASP.NET Core Identity cu cookie**, în aceeași aplicație; fără Duende (costuri de licență) și fără OpenIddict (secțiunea 7) |
 | 16.11.2026 | Installer-ul scrie CUI-urile licențiate în baza de date, ERP-ul le citește fără să decripteze, iar licențele noi intră prin butonul „Actualizează licența” (deciziile D13, D14) |
+| 16.11.2026 | Licența poartă o semnătură detașată peste conținutul ei; ERP-ul o verifică cu cheia publică, deci datele scrise în baza de date nu pot fi modificate nedetectat (decizia D15) |
 | 16.11.2026 | Cifra de control a CUI-ului e blocantă în produsul finalizat; în dezvoltare e doar avertisment, ca testele să poată folosi CUI-uri inventate (decizia D12) |
 | 15.11.2026 | Instalarea în **pași simpli**, cu două aplicații mici; licența conține CUI-urile **doar cu partea numerică, separate prin „:”**, criptate puternic; conexiunea SQL cu **Windows authentication**; installer-ul rulează și pe **Windows 10/11**; CUI-ul firmei se verifică în licență la adăugarea firmei sau a grupului (secțiunile 3–5) |
 
@@ -131,11 +132,30 @@ Conținutul (înainte de criptare) e un JSON UTF-8. CUI-urile sunt **un singur �
   "modules": ["Core", "Finance", "Sales", "Purchasing", "Inventory", "Integrations", "Manufacturing", "Hr", "Pos", "Construction", "Reporting"],
   "limits": { "users": 100, "payrollEmployees": 300, "posTerminals": 10 },
   "issuedAt": "2026-11-15",
-  "validUntil": "2027-12-31"
+  "validUntil": "2027-12-31",
+  "contentSignature": "MEUCIQDf…"
 }
 ```
 
 `validUntil` e `null` pentru „Nelimitat”. Regula pentru `fiscalCodes`: `^[1-9][0-9]{1,9}(:[1-9][0-9]{1,9})*$`, fără duplicate.
+
+`contentSignature` (decizia D15) e **semnătura detașată** peste conținutul licenței, în Base64, 64 de octeți: aceeași cheie privată ECDSA P-256, același algoritm ca semnătura fișierului, dar peste un text canonic pe care îl poate reconstrui oricine are datele în clar — fără să decripteze nimic. Așa, installer-ul copiază datele licenței în baza ERP-ului împreună cu semnătura, iar ERP-ul le poate verifica având numai cheia publică (4.3, 4.1).
+
+Textul canonic, octeți UTF-8, rânduri despărțite cu `\n`, fără rând final:
+
+```
+ERPLIC-P1
+LIC-2026-000123
+ERP
+Grupul Exemplu
+10000001:12345678:23456789:34567890
+Core Finance Sales Purchasing Inventory Integrations Manufacturing Hr Pos Construction Reporting
+100|300|10
+2026-11-15
+2027-12-31
+```
+
+Rândurile sunt, în ordine: marcajul versiunii textului canonic, numărul licenței, produsul, denumirea clientului, lista de CUI-uri, modulele în ordinea din licență despărțite prin spațiu, limitele despărțite prin `|`, data emiterii și `validUntil` (sau `-` pentru „Nelimitat”). Câmpul `contentSignature` nu intră în textul pe care îl acoperă.
 
 ### 3.4 Criptarea și semnarea
 
@@ -160,6 +180,8 @@ Formatul binar al fișierului `.lic`:
 | 42 + n | 64 | Semnătura ECDSA peste octeții `0 … 41 + n` |
 
 AAD pentru GCM = octeții `0 … 25` (marcaj, versiune, KeyId, nonce, lungime). Orice octet modificat face fie semnătura, fie decriptarea să eșueze.
+
+Semnătura detașată din 3.3 (`contentSignature`) **nu schimbă formatul binar**: ea stă în JSON-ul criptat, deci versiunea formatului rămâne `1`. Fișierele emise înaintea deciziei D15 nu au câmpul și se citesc în continuare, dar installer-ul nu le acceptă la instalare (4.1).
 
 Codul de criptare, decriptare și verificare stă într-o singură bibliotecă, `Erp.Licensing`, folosită de generator, de installer și de `Erp.Host`. Generatorul are în plus clasa `LicenseWriter`, care nu se compilează în celelalte aplicații.
 
@@ -186,7 +208,7 @@ Generatorul păstrează local `%APPDATA%\ErpLicenseGen\licente-emise.csv`: numă
 | Moment | Ce se întâmplă |
 | --- | --- |
 | Installer, ecranul 3 | Operatorul alege fișierul `.lic`. Installer-ul îl verifică (4.2) și afișează: clientul, lista CUI-urilor (cu prefixul `RO` doar la afișare), modulele, data de expirare. O licență invalidă sau expirată nu permite continuarea |
-| Installer, pasul de instalare | Copiază fișierul **criptat** în `C:\ProgramData\Erp\<Instanță>\license\erp.lic` și scrie în `core.InstallationLicense` atât octeții criptați (`LicenseFile`, `varbinary(max)`, ca licența să fie inclusă în backup-ul bazei), cât și **conținutul lizibil**: numărul licenței, clientul, lista de CUI-uri, modulele, limitele și valabilitatea. Fiecare CUI primește un rând în `core.InstallationLicenseFiscalCode` (decizia D13) |
+| Installer, pasul de instalare | Copiază fișierul **criptat** în `C:\ProgramData\Erp\<Instanță>\license\erp.lic` și scrie în `core.InstallationLicense` atât octeții criptați (`LicenseFile`, `varbinary(max)`, ca licența să fie inclusă în backup-ul bazei), cât și **conținutul lizibil** — numărul licenței, clientul, lista de CUI-uri, modulele, limitele, valabilitatea — împreună cu **semnătura detașată** `ContentSignature` (deciziile D13, D15). O licență fără semnătură detașată nu se acceptă la instalare. CUI-urile nu se mai scriu în rânduri separate: ar fi date nesemnate; vederea `core.v_LicensedFiscalCode` le desparte din coloana semnată, cu `STRING_SPLIT` |
 | Installer, butonul „Actualizează licența” | Singura cale prin care o licență nouă ajunge în instalare (de exemplu pentru o firmă adăugată în grup): se verifică (4.2) și se rescriu fișierul și tabelele (10.5, decizia D14) |
 
 În clar, conținutul licenței există doar în memorie, niciodată pe disc sau în jurnale.
@@ -210,14 +232,15 @@ Cerința lui Aurelian: la adăugarea unei firme sau a unui grup, licența se dec
 Decizia D13 (16.11.2026): **ERP-ul nu decriptează licența**. Installer-ul scrie CUI-urile licențiate în baza de date, iar aplicația le citește de acolo. Așa, cele două aplicații de instalare rămân independente de ERP: contractul dintre ele este tabela, nu o bibliotecă.
 
 1. Comenzile `CreateCompany`, `UpdateCompany` (dacă se schimbă CUI-ul) și crearea unui grup cu firmele lui (asistentul de configurare, pasul „Firme”, și ecranul Firme și structură) apelează în handler `ILicenseService.EnsureFiscalCodeLicensed(fiscalCode)`, **înainte** de orice scriere.
-2. `ILicenseService` citește `core.InstallationLicenseFiscalCode` (un `SELECT`, fără criptografie) și păstrează lista în memorie; o reîncarcă la pornire și zilnic.
-3. CUI-ul introdus se **normalizează la partea numerică** (se elimină `RO`, spațiile; de exemplu `RO 12345678` → `12345678`) și se compară exact cu rândurile din tabelă, care conțin tot numai cifre.
+2. `ILicenseService` citește licența din `core.v_InstallationLicense`, **verifică semnătura detașată** `ContentSignature` cu cheia publică ECDSA (decizia D15, fără decriptare și fără cheia AES), apoi păstrează lista de CUI-uri în memorie; reface verificarea la pornire și zilnic. Semnătură invalidă = datele licenței au fost modificate în baza de date: lista se refuză întreagă, instalarea trece în doar-citire și administratorii primesc avertisment, ca la regula 7.
+3. CUI-ul introdus se **normalizează la partea numerică** (se elimină `RO`, spațiile; de exemplu `RO 12345678` → `12345678`) și se compară exact cu elementele listei semnate, care conțin tot numai cifre.
 4. Dacă nu se găsește, comanda se refuză cu `403` și codul `CORE_FISCAL_CODE_NOT_LICENSED`, cu mesajul afișat pe câmpul CUI:
    > „CUI-ul 12345678 nu figurează în licența acestei instalări. Pentru a adăuga firma, cereți furnizorului o licență care o include și încărcați-o din Administrare › Configurare › Licență.”
 5. Pentru un grup, fiecare firmă se verifică separat; mesajul listează toate CUI-urile care lipsesc, iar grupul nu se salvează parțial.
 6. Numărul de firme active nu poate depăși numărul de CUI-uri din licență (consecință directă a regulii de mai sus).
 7. La pornire și zilnic, aplicația verifică și că toate firmele active au CUI-ul în licență (02.01, fluxul 4.4); o firmă al cărei CUI a dispărut dintr-o licență nouă intră în modul doar-citire, cu avertisment pentru administratori.
-8. Tabelele sunt **doar-citire pentru aplicație**: rolurile de modul au `SELECT`, iar `INSERT`, `UPDATE` și `DELETE` sunt refuzate explicit cu `DENY` (5.5). Le scrie numai installer-ul, cu contul Windows al operatorului. Un cont `sysadmin` pe SQL Server poate totuși modifica rândurile: limita de firme nu mai e păzită criptografic, ci de drepturile din bază (consecința asumată a deciziei D13).
+8. Tabela e **doar-citire pentru aplicație**: rolurile de modul au `SELECT`, iar `INSERT`, `UPDATE` și `DELETE` sunt refuzate explicit cu `DENY` (5.5). O scrie numai installer-ul, cu contul Windows al operatorului.
+9. Un cont `sysadmin` pe SQL Server poate totuși modifica rândul, dar **nu poate produce o semnătură validă**: cheia privată există numai pe calculatorul care emite licențele (3.5). Un CUI adăugat cu `INSERT` sau `UPDATE` invalidează semnătura, deci lista e refuzată în întregime (regula 2). Ce rămâne în afara protecției, inevitabil pe on-premise: cine are administrator pe server poate modifica binarele ERP-ului ca să sară verificarea; și poate reinstala o licență mai veche, proprie, dacă aceea avea mai multe firme, până la expirarea ei. Semnătura nu e legată de instalare, pentru că generatorul emite licența înainte de instalare și nu cunoaște `installId`-ul.
 
 Testul de acceptare corespunzător este IA-07 (secțiunea 11).
 
@@ -1149,7 +1172,7 @@ Testele unitare și de integrare SQL rulează în CI la fiecare pull request (Te
 | --- | --- | --- |
 | T1 | `Erp.Licensing`: formatul din 3.4, `ILicenseReader` cu verificările din 4.2, normalizarea CUI, `LicenseKeys.cs` | IA-02 |
 | T2 | `ErpLicenseGen` (WPF, MVVM): ecranul din 3.2, cheile (3.5), registrul (3.6), „Deschide o licență” | IA-01; o licență generată se deschide corect |
-| T3 | Licența în baza de date: tabelele `core.InstallationLicense` și `core.InstallationLicenseFiscalCode`, scrise la I-09 și doar-citire pentru aplicație (D13), plus butonul „Actualizează licența” (10.5, D14). `ILicenseService.EnsureFiscalCodeLicensed` din Nucleu citește tabela și se implementează în depozitul ERP, pe baza acestui contract | IA-07 |
+| T3 | Licența în baza de date: `core.InstallationLicense` cu semnătura detașată, scrisă la I-09 și doar-citire pentru aplicație (D13, D15), vederile `core.v_InstallationLicense` și `core.v_LicensedFiscalCode`, plus butonul „Actualizează licența” (10.5, D14). `ILicenseService.EnsureFiscalCodeLicensed` din Nucleu verifică semnătura și citește lista; se implementează în depozitul ERP, pe baza acestui contract | IA-07 |
 | T4 | `Erp.Setup.Sql`: baza, scheme, roluri, loginuri Windows (5.5, 5.7), runner-ul DbUp (5.8) | IA-04, IA-11 |
 | T5 | Administratorul inițial (5.9), procedurile lui | IA-06, IA-09 |
 | T6 | `Erp.Setup.Windows`: DISM, Hosting Bundle, certificat intern, IIS, serviciu, firewall, ACL (5.10) | Instalare pe VM până la I-15 |
@@ -1176,7 +1199,8 @@ Testele unitare și de integrare SQL rulează în CI la fiecare pull request (Te
 | D9 | Certificatul intern generat de installer e **opțiunea implicită** pe ecranul 2; operatorul poate alege în schimb un certificat existent din `LocalMachine\My` (de exemplu emis de AD CS-ul clientului sau pentru o adresă publică) | Decis de Aurelian, 15.11.2026 |
 | D10 | Toate schemele modulelor se instalează indiferent de licență; licența decide doar ce module pornesc | Validat 14.11.2026 |
 | D11 | Backup complet zilnic, log la 15 minute, păstrare 14 zile, CHECKDB săptămânal | Validat 14.11.2026 |
-| D13 | CUI-urile licențiate se scriu de installer în `core.InstallationLicense` și `core.InstallationLicenseFiscalCode`; ERP-ul le citește de acolo și **nu decriptează licența**. Tabelele sunt doar-citire pentru aplicație (`DENY` pe scriere). Consecința asumată: limita de firme e păzită de drepturile din bază, nu criptografic | Decis de Aurelian, 16.11.2026 |
+| D13 | CUI-urile licențiate se scriu de installer în `core.InstallationLicense`; ERP-ul le citește de acolo și **nu decriptează licența**. Tabela e doar-citire pentru aplicație (`DENY` pe scriere) | Decis de Aurelian, 16.11.2026 |
+| D15 | Licența conține o **semnătură detașată** peste textul canonic al conținutului (`contentSignature`, 3.3), pe care installer-ul o copiază în bază și pe care ERP-ul o verifică cu cheia publică, fără decriptare. Modificarea rândului în baza de date de către un `sysadmin` invalidează semnătura, deci limita de firme redevine păzită criptografic (4.3, regulile 2 și 9) | Decis de Aurelian, 16.11.2026 |
 | D14 | O licență nouă intră în instalare numai prin butonul „Actualizează licența” din `ErpSetup.exe` (10.5); ecranul de încărcare din aplicație dispare | Decis de Aurelian, 16.11.2026 |
 | D12 | Cifra de control a CUI-ului: avertisment în timpul dezvoltării (ca testele să poată folosi CUI-uri inventate), blocantă în produsul finalizat. Se trece pe blocantă înainte de livrare, din `LicensingPolicy.EnforceFiscalCodeCheckDigit` | Decis de Aurelian, 16.11.2026 |
 

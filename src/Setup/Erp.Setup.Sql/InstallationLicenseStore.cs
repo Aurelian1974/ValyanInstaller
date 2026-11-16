@@ -18,11 +18,18 @@ namespace Erp.Setup.Sql;
 public sealed class InstallationLicenseStore
 {
     private readonly ISetupConnectionFactory connections;
+    private readonly ILicenseKeyRing keyRing;
 
-    public InstallationLicenseStore(ISetupConnectionFactory connections)
+    /// <param name="connections">Conexiunea installer-ului (Windows authentication, R5).</param>
+    /// <param name="keyRing">
+    /// Cheile publice, pentru verificarea semnăturii detașate la citire (decizia D15).
+    /// Implicit, cele livrate cu produsul.
+    /// </param>
+    public InstallationLicenseStore(ISetupConnectionFactory connections, ILicenseKeyRing? keyRing = null)
     {
         ArgumentNullException.ThrowIfNull(connections);
         this.connections = connections;
+        this.keyRing = keyRing ?? LicenseKeys.Ring;
     }
 
     /// <summary>
@@ -46,6 +53,15 @@ public sealed class InstallationLicenseStore
         {
             throw new ArgumentException(
                 "Lista de CUI-uri nu respectă regula din 3.3; licența nu se scrie în bază.",
+                nameof(license));
+        }
+
+        // Decizia D15: fără semnătura detașată, ERP-ul nu ar putea verifica rândul, deci
+        // licența nu se acceptă la instalare (4.1).
+        if (!LicensePayload.TryDecodeSignature(license.ContentSignature, out var contentSignature))
+        {
+            throw new ArgumentException(
+                "Licența nu poartă semnătura detașată a conținutului (decizia D15); cereți furnizorului o licență nouă.",
                 nameof(license));
         }
 
@@ -74,11 +90,11 @@ public sealed class InstallationLicenseStore
                     INSERT INTO core.InstallationLicense
                         (LicenseId, CustomerName, FiscalCodes, Modules,
                          MaxUsers, MaxPayrollEmployees, MaxPosTerminals,
-                         IssuedAt, ValidUntil, LicenseFile, KeyId, IsCurrent, LoadedBy, SetupVersion)
+                         IssuedAt, ValidUntil, ContentSignature, LicenseFile, KeyId, IsCurrent, LoadedBy, SetupVersion)
                     VALUES
                         (@LicenseId, @CustomerName, @FiscalCodes, @Modules,
                          @MaxUsers, @MaxPayrollEmployees, @MaxPosTerminals,
-                         @IssuedAt, @ValidUntil, @LicenseFile, @KeyId, 1, @LoadedBy, @SetupVersion);
+                         @IssuedAt, @ValidUntil, @ContentSignature, @LicenseFile, @KeyId, 1, @LoadedBy, @SetupVersion);
 
                     SELECT CAST(SCOPE_IDENTITY() AS int);
                     """,
@@ -93,25 +109,12 @@ public sealed class InstallationLicenseStore
                         MaxPosTerminals = license.Limits.PosTerminals,
                         IssuedAt = license.IssuedAt,
                         ValidUntil = license.ValidUntil,
+                        ContentSignature = contentSignature,
                         LicenseFile = licenseFile,
                         KeyId = keyId,
                         LoadedBy = loadedBy,
                         SetupVersion = setupVersion,
                     },
-                    transaction: transaction,
-                    cancellationToken: ct)).ConfigureAwait(false);
-
-            var codes = license.FiscalCodeList
-                .Select((code, index) => new { InstallationLicenseId = id, FiscalCode = code, Ordinal = index + 1 })
-                .ToArray();
-
-            await connection.ExecuteAsync(
-                new CommandDefinition(
-                    """
-                    INSERT INTO core.InstallationLicenseFiscalCode (InstallationLicenseId, FiscalCode, Ordinal)
-                    VALUES (@InstallationLicenseId, @FiscalCode, @Ordinal);
-                    """,
-                    codes,
                     transaction: transaction,
                     cancellationToken: ct)).ConfigureAwait(false);
 
@@ -136,7 +139,8 @@ public sealed class InstallationLicenseStore
                 SELECT TOP (1)
                        l.Id, l.LicenseId, l.CustomerName, l.FiscalCodes, l.Modules,
                        l.MaxUsers, l.MaxPayrollEmployees, l.MaxPosTerminals,
-                       l.IssuedAt, l.ValidUntil, l.KeyId, l.LoadedAt, l.LoadedBy, l.SetupVersion
+                       l.IssuedAt, l.ValidUntil, l.ContentSignature, l.KeyId,
+                       l.LoadedAt, l.LoadedBy, l.SetupVersion
                 FROM core.InstallationLicense AS l
                 WHERE l.IsCurrent = 1;
                 """,
@@ -147,20 +151,29 @@ public sealed class InstallationLicenseStore
             return null;
         }
 
-        var codes = await connection.QueryAsync<string>(
-            new CommandDefinition(
-                """
-                SELECT c.FiscalCode
-                FROM core.InstallationLicenseFiscalCode AS c
-                WHERE c.InstallationLicenseId = @Id
-                ORDER BY c.Ordinal;
-                """,
-                new { row.Id },
-                cancellationToken: ct)).ConfigureAwait(false);
+        // CUI-urile vin din coloana semnată, nu din rânduri separate (D15).
+        var codes = FiscalCode.SplitList(row.FiscalCodes);
+
+        // Semnătura se verifică pe textul canonic recompus din coloane: dacă rândul a fost
+        // modificat în baza de date, verificarea cade (4.3, regulile 2 și 9).
+        var canonical = LicensePayload.Canonical(
+            row.LicenseId,
+            "ERP",
+            row.CustomerName,
+            row.FiscalCodes,
+            row.Modules.Split(' ', StringSplitOptions.RemoveEmptyEntries),
+            row.MaxUsers,
+            row.MaxPayrollEmployees,
+            row.MaxPosTerminals,
+            DateOnly.FromDateTime(row.IssuedAt),
+            row.ValidUntil is { } v ? DateOnly.FromDateTime(v) : null);
+
+        var signatureValid = LicensePayload.Verify(canonical, row.ContentSignature, keyRing, row.KeyId);
 
         return new StoredLicense
         {
             Id = row.Id,
+            SignatureValid = signatureValid,
             LicenseId = row.LicenseId,
             CustomerName = row.CustomerName,
             FiscalCodes = [.. codes],
@@ -178,7 +191,28 @@ public sealed class InstallationLicenseStore
     }
 
     /// <summary>
-    /// CUI-urile licențiate, așa cum le citește ERP-ul din <c>core.v_LicensedFiscalCode</c> (4.3).
+    /// CUI-urile licențiate, cu semnătura verificată (4.3, regula 2). Aruncă
+    /// <see cref="LicenseTamperedException"/> dacă rândul a fost modificat în baza de date.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ReadVerifiedFiscalCodesAsync(CancellationToken ct = default)
+    {
+        var license = await ReadCurrentAsync(ct).ConfigureAwait(false);
+        if (license is null)
+        {
+            return [];
+        }
+
+        if (!license.SignatureValid)
+        {
+            throw new LicenseTamperedException(license.LicenseId);
+        }
+
+        return license.FiscalCodes;
+    }
+
+    /// <summary>
+    /// CUI-urile așa cum le desparte vederea din coloana semnată, fără verificare: pentru
+    /// afișare și pentru pachetul de diagnostic (10.4).
     /// </summary>
     public async Task<IReadOnlyList<string>> ReadLicensedFiscalCodesAsync(CancellationToken ct = default)
     {
@@ -276,10 +310,25 @@ public sealed class InstallationLicenseStore
         int MaxPosTerminals,
         DateTime IssuedAt,              // coloana `date` ajunge în ADO.NET ca DateTime
         DateTime? ValidUntil,
+        byte[] ContentSignature,
         byte KeyId,
         DateTime LoadedAt,
         string LoadedBy,
         string SetupVersion);
+}
+
+/// <summary>
+/// Rândul licenței din baza de date nu are semnătură validă: datele au fost modificate
+/// (4.3, regulile 2 și 9).
+/// </summary>
+public sealed class LicenseTamperedException : Exception
+{
+    public LicenseTamperedException(string licenseId)
+        : base("Datele licenței din baza de date au fost modificate: semnătura nu mai este validă. "
+               + "Încărcați din nou licența cu „Actualizează licența” din ErpSetup.exe.")
+        => LicenseId = licenseId;
+
+    public string LicenseId { get; } = string.Empty;
 }
 
 /// <summary>O firmă activă din instalare (10.5).</summary>
@@ -292,6 +341,13 @@ public sealed record SaveLicenseResult(int Id, bool WasWritten);
 public sealed record StoredLicense
 {
     public required int Id { get; init; }
+
+    /// <summary>
+    /// Semnătura detașată a rândului e validă (decizia D15). Fals = datele au fost modificate
+    /// în baza de date: lista nu se folosește, iar ERP-ul trece instalarea în doar-citire
+    /// (4.3, regulile 2 și 9).
+    /// </summary>
+    public required bool SignatureValid { get; init; }
 
     public required string LicenseId { get; init; }
 

@@ -3,6 +3,9 @@ using System.Text.Json;
 
 namespace Erp.Licensing.Generator;
 
+/// <summary>Licența emisă: octeții fișierului și conținutul cu semnătura detașată (D15).</summary>
+public sealed record IssuedLicense(byte[] File, LicenseContent Content);
+
 /// <summary>
 /// Scrierea fișierului de licență (3.4): se criptează AES-256-GCM, apoi se semnează
 /// ECDSA P-256 peste tot fișierul în afară de semnătură.
@@ -61,12 +64,22 @@ public sealed class LicenseWriter
     }
 
     /// <summary>Produce octeții fișierului <c>.lic</c> pentru un conținut valid (3.3, 3.4).</summary>
-    public byte[] Write(LicenseContent content)
+    public byte[] Write(LicenseContent content) => WriteSigned(content).File;
+
+    /// <summary>
+    /// Produce fișierul și întoarce și conținutul cu semnătura detașată completată (D15), așa
+    /// cum îl va citi installer-ul din fișier și cum îl scrie în baza de date (4.1).
+    /// </summary>
+    public IssuedLicense WriteSigned(LicenseContent content)
     {
         ArgumentNullException.ThrowIfNull(content);
         Validate(content);
 
-        var plaintext = JsonSerializer.SerializeToUtf8Bytes(content, ContentJsonOptions);
+        // Decizia D15: semnătura detașată peste textul canonic intră în licență, ca ERP-ul să
+        // poată verifica datele scrise în baza de date fără să decripteze nimic (3.3).
+        var signed = content with { ContentSignature = Convert.ToBase64String(SignContent(content)) };
+
+        var plaintext = JsonSerializer.SerializeToUtf8Bytes(signed, ContentJsonOptions);
         try
         {
             var file = new byte[LicenseFileFormat.FixedLength + plaintext.Length];
@@ -102,12 +115,30 @@ public sealed class LicenseWriter
                     "Semnătura nu are 64 de octeți; cheia de semnare nu este ECDSA P-256.");
             }
 
-            return file;
+            return new IssuedLicense(file, signed);
         }
         finally
         {
             CryptographicOperations.ZeroMemory(plaintext);
         }
+    }
+
+    /// <summary>Semnătura detașată peste textul canonic al conținutului (3.3, decizia D15).</summary>
+    private byte[] SignContent(LicenseContent content)
+    {
+        var canonical = LicensePayload.CanonicalBytes(LicensePayload.Canonical(content));
+        var signature = signingKey.SignData(
+            canonical,
+            HashAlgorithmName.SHA256,
+            DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+
+        if (signature.Length != LicensePayload.SignatureLength)
+        {
+            throw new CryptographicException(
+                "Semnătura conținutului nu are 64 de octeți; cheia de semnare nu este ECDSA P-256.");
+        }
+
+        return signature;
     }
 
     private static void Validate(LicenseContent content)

@@ -40,6 +40,15 @@ public sealed record LicenseContent
     [JsonPropertyName("validUntil")]
     public DateOnly? ValidUntil { get; init; }
 
+    /// <summary>
+    /// Semnătura detașată peste textul canonic al conținutului, în Base64 (3.3, decizia D15).
+    /// O produce generatorul; installer-ul o copiază în baza de date, iar ERP-ul o verifică
+    /// cu cheia publică, fără să decripteze licența (4.1, 4.3). Lipsește din licențele emise
+    /// înaintea deciziei D15; installer-ul nu le acceptă.
+    /// </summary>
+    [JsonPropertyName("contentSignature")]
+    public string? ContentSignature { get; init; }
+
     /// <summary>CUI-urile ca listă (4.3).</summary>
     [JsonIgnore]
     public string[] FiscalCodeList => FiscalCode.SplitList(FiscalCodes);
@@ -79,7 +88,8 @@ public sealed record LicenseContent
             && Modules.SequenceEqual(other.Modules, StringComparer.Ordinal)
             && Limits == other.Limits
             && IssuedAt == other.IssuedAt
-            && ValidUntil == other.ValidUntil;
+            && ValidUntil == other.ValidUntil
+            && string.Equals(ContentSignature, other.ContentSignature, StringComparison.Ordinal);
 
     public override int GetHashCode()
     {
@@ -96,6 +106,7 @@ public sealed record LicenseContent
         hash.Add(Limits);
         hash.Add(IssuedAt);
         hash.Add(ValidUntil);
+        hash.Add(ContentSignature, StringComparer.Ordinal);
         return hash.ToHashCode();
     }
 }

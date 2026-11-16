@@ -36,6 +36,12 @@ internal sealed class LicenseTestKeys : IDisposable
 
     public LicenseReader CreateReader() => CreateReader(new DateOnly(2026, 11, 20));
 
+    /// <summary>
+    /// Emite o licență și întoarce fișierul plus conținutul cu semnătura detașată, exact ce
+    /// are installer-ul în mână după ce citește fișierul (4.1, D15).
+    /// </summary>
+    public IssuedLicense Issue(LicenseContent content) => Writer.WriteSigned(content);
+
     public void Dispose() => Ecdsa.Dispose();
 
     private sealed class FixedClock(DateOnly today) : TimeProvider

@@ -158,11 +158,15 @@ public sealed class LicenseDraftTests
             .Validate(Today, enforceCheckDigit: true)
             .Content!;
 
-        var file = keys.Writer.Write(content);
-        var result = keys.CreateReader(Today).Read(file);
+        var issued = keys.Issue(content);
+        var result = keys.CreateReader(Today).Read(issued.File);
 
         Assert.True(result.IsValid, result.Message);
-        Assert.Equal(content, result.Value);
+
+        // Licența citită e identică celei emise, inclusiv semnătura detașată (D15).
+        Assert.Equal(issued.Content, result.Value);
+        Assert.NotNull(result.Value.ContentSignature);
+        Assert.Equal(content, result.Value with { ContentSignature = null });
     }
 
     private static LicenseDraft Draft(string? fiscalCodes = null) => new()
