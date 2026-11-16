@@ -20,7 +20,7 @@ public sealed class LicenseWriter
 
     private readonly byte keyId;
     private readonly ECDsa signingKey;
-    private readonly byte[] aesKey;
+    private readonly Func<AesGcm> aesFactory;
 
     /// <param name="keyId">Perechea de chei folosită, 1–255 (3.4).</param>
     /// <param name="signingKey">Cheia privată ECDSA P-256; rămâne în proprietatea apelantului.</param>
@@ -41,7 +41,23 @@ public sealed class LicenseWriter
 
         this.keyId = keyId;
         this.signingKey = signingKey;
-        this.aesKey = aesKey.ToArray();
+
+        var key = aesKey.ToArray();
+        this.aesFactory = () => new AesGcm(key, LicenseFileFormat.TagLength);
+    }
+
+    /// <summary>
+    /// Varianta folosită în generator: cheia AES vine din inelul de chei al produsului și
+    /// rămâne mascată, fără să fie copiată vreodată în clar în afara <see cref="AesGcm"/> (3.5).
+    /// </summary>
+    public LicenseWriter(ECDsa signingKey, LicenseKeyMaterial material)
+    {
+        ArgumentNullException.ThrowIfNull(signingKey);
+        ArgumentNullException.ThrowIfNull(material);
+
+        this.keyId = material.KeyId;
+        this.signingKey = signingKey;
+        this.aesFactory = material.CreateAesGcm;
     }
 
     /// <summary>Produce octeții fișierului <c>.lic</c> pentru un conținut valid (3.3, 3.4).</summary>
@@ -63,7 +79,7 @@ public sealed class LicenseWriter
             // Antetul se scrie înaintea criptării: el este AAD-ul pentru GCM (3.4).
             LicenseFileFormat.WriteHeader(file, keyId, nonce, plaintext.Length);
 
-            using (var aes = new AesGcm(aesKey, LicenseFileFormat.TagLength))
+            using (var aes = aesFactory())
             {
                 aes.Encrypt(
                     nonce: file.AsSpan(LicenseFileFormat.NonceRange),

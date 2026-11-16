@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- R1: WPF .NET 10, MVVM, self-contained single-file, fără trimming (WPF nu îl suportă). -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishTrimmed>false</PublishTrimmed>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>ErpLicenseGen</AssemblyName>
+    <RootNamespace>Erp.LicenseGen</RootNamespace>
+    <!-- Permite compilarea pe Linux, în CI; rularea rămâne numai pe Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.15" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../Shared/Erp.Licensing/Erp.Licensing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      3.4: LicenseWriter și fabrica de chei se compilează NUMAI aici, nu în biblioteca
+      partajată, deci nu ajung în installer sau în ERP.
+    -->
+    <Compile Include="../../Shared/Erp.Licensing/Generator/*.cs" LinkBase="Licensing" />
+  </ItemGroup>
+
+</Project>

@@ -65,6 +65,39 @@ public sealed record LicenseContent
     /// <summary>Adevărat dacă licența e expirată la data dată (4.2, verificarea 5).</summary>
     public bool IsExpiredAt(DateOnly date)
         => ValidUntil is { } until && until < date;
+
+    /// <summary>
+    /// Egalitate pe valori. Varianta generată de compilator ar compara <see cref="Modules"/>
+    /// prin referință, deci două licențe cu aceleași module ar ieși diferite.
+    /// </summary>
+    public bool Equals(LicenseContent? other)
+        => other is not null
+            && string.Equals(LicenseId, other.LicenseId, StringComparison.Ordinal)
+            && string.Equals(Product, other.Product, StringComparison.Ordinal)
+            && string.Equals(CustomerName, other.CustomerName, StringComparison.Ordinal)
+            && string.Equals(FiscalCodes, other.FiscalCodes, StringComparison.Ordinal)
+            && Modules.SequenceEqual(other.Modules, StringComparer.Ordinal)
+            && Limits == other.Limits
+            && IssuedAt == other.IssuedAt
+            && ValidUntil == other.ValidUntil;
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(LicenseId, StringComparer.Ordinal);
+        hash.Add(Product, StringComparer.Ordinal);
+        hash.Add(CustomerName, StringComparer.Ordinal);
+        hash.Add(FiscalCodes, StringComparer.Ordinal);
+        foreach (var module in Modules)
+        {
+            hash.Add(module, StringComparer.Ordinal);
+        }
+
+        hash.Add(Limits);
+        hash.Add(IssuedAt);
+        hash.Add(ValidUntil);
+        return hash.ToHashCode();
+    }
 }
 
 /// <summary>Limitele din licență (3.3).</summary>
